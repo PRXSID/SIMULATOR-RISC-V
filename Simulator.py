@@ -33,3 +33,24 @@ b_type_instructions = {
 j_type_instructions = {
     "1101111": "jal"
 }
+
+def bianry_deciaml(n):
+    i=0
+    sum=0
+    while n>0:
+        a= n%10
+        n=n//10
+        a= a*2**i
+        sum+=a
+        i+=1
+    return sum
+def decimal_binary(n):
+    sum=0
+    pow=1
+    while n>0:
+        a= n%2
+        q=n//2
+        sum+=pow*a
+        n=q
+        pow=pow*10
+    return sum
