@@ -1,0 +1,11 @@
+
+def bianry_deciaml(n):
+    i=0
+    sum=0
+    while n>0:
+        a= n%10
+        n=n//10
+        a= a*2**i
+        sum+=a
+        i+=1
+    return sum
