@@ -1,6 +1,5 @@
 import sys
 
-# Define instruction formats
 r_type_instructions = {
     "0110011": {
         "000": {"0000000": "add", "0100000": "sub"},
@@ -32,8 +31,8 @@ j_type_instructions = {
     "1101111": "jal"
 }
 
-# Initialize registers and memory
 registers = [0] * 32
+registers[0] = 0  
 registers[2] = 380
 memory = {i: 0 for i in range(32)}  
 program_counter = 0
@@ -49,17 +48,67 @@ def decimal_binary(n):
         pow=pow*10
     return sum
 
-def parse_instruction(instruction):
+def binary_decimal(n):
+    return int(n, 2)
 
-    return {
-        "opcode": instruction[25:32],
-        "rd": int(instruction[20:25], 2),
-        "func3": instruction[17:20],
-        "rs1": int(instruction[12:17], 2),
-        "rs2": int(instruction[7:12], 2),
-        "func7": instruction[0:7],
-        "imm": int(instruction[0:12], 2) if instruction[0] == '0' else -((1 << 12) - int(instruction[0:12], 2))
-    }
+def parse_instruction(instruction):
+    if instruction[25:32] in r_type_instructions:    
+        return {
+            "opcode": instruction[25:32],
+            "rd": int(instruction[20:25], 2),
+            "func3": instruction[17:20],
+            "rs1": int(instruction[12:17], 2),
+            "rs2": int(instruction[7:12], 2),
+            "func7": instruction[0:7],
+        }
+    
+    elif instruction[25:32] in i_type_instructions:
+        imm = int(instruction[0:12], 2)
+        if instruction[0] == '1':
+            imm = imm - (1 << 12)
+        return {
+            "opcode": instruction[25:32],
+            "rd": int(instruction[20:25], 2),
+            "func3": instruction[17:20],
+            "rs1": int(instruction[12:17], 2),
+            "imm": imm,
+        }
+    elif instruction[25:32] in s_type_instructions:
+        imm = (int(instruction[0:7], 2) << 5) | int(instruction[20:25], 2)
+        return {
+            "opcode": instruction[25:32],
+            "func3": instruction[17:20],
+            "rs1": int(instruction[12:17], 2),
+            "rs2": int(instruction[7:12], 2),
+            "imm": imm,
+        }
+    elif instruction[25:32] in b_type_instructions:
+        imm = instruction[24] + instruction[0] + instruction[1:7] + instruction[20:24] + "0"
+        imm = int(imm, 2)
+        # print(imm)
+        if imm & (1 << 12):  
+            imm -= (1 << 13)
+        return {
+            "opcode": instruction[25:32],
+            "func3": instruction[17:20],
+            "rs1": int(instruction[12:17], 2),
+            "rs2": int(instruction[7:12], 2),
+            "imm": imm,
+        }
+    elif instruction[25:32] in j_type_instructions:
+        imm = (int(instruction[0], 2) << 20) | (int(instruction[1:11], 2) << 1) | (int(instruction[11], 2) << 11) | (int(instruction[12:20], 2) << 12)
+        if instruction[0] == '1':
+            imm = imm - (1 << 21)
+        return {
+            "opcode": instruction[25:32],
+            "rd": int(instruction[20:25], 2),
+            "imm": imm,
+        }
+    
+    else:
+        raise Exception("Invalid instruction")
+
+
 
 def execute_instruction(instruction):
     global program_counter
@@ -83,6 +132,11 @@ def execute_instruction(instruction):
                 registers[fields["rd"]] = registers[fields["rs1"]] | registers[fields["rs2"]]
             elif operation == "and":
                 registers[fields["rd"]] = registers[fields["rs1"]] & registers[fields["rs2"]]
+            else:
+                raise Exception("Invalid instruction")
+        else:
+            raise Exception("Invalid instruction")
+            
 
     elif opcode in i_type_instructions:
         func3 = fields["func3"]
@@ -92,12 +146,18 @@ def execute_instruction(instruction):
                 registers[fields["rd"]] = registers[fields["rs1"]] + fields["imm"]
             elif operation == "lw":
                 address = registers[fields["rs1"]] + fields["imm"]
-                registers[fields["rd"]] = memory.get(address // 4, 0)
+                temp_add = (address % 65536)//4
+                registers[fields["rd"]] = memory.get(temp_add,0)
             elif operation == "jalr":
                 temp = program_counter + 4
                 program_counter = (registers[fields["rs1"]] + fields["imm"]) & ~1
                 registers[fields["rd"]] = temp
-                return  # Skip the default PC increment
+                registers[0] = 0
+                return  
+            else:
+                raise Exception("Invalid instruction")
+        else:
+            raise Exception("Invalid instruction")
 
     elif opcode in s_type_instructions:
         func3 = fields["func3"]
@@ -105,7 +165,12 @@ def execute_instruction(instruction):
             operation = s_type_instructions[opcode][func3]
             if operation == "sw":
                 address = registers[fields["rs1"]] + fields["imm"]
-                memory[address // 4] = registers[fields["rs2"]]
+                temp_add = (address % 65536)//4
+                memory[temp_add] = registers[fields["rs2"]]
+            else:
+                raise Exception("Invalid instruction")
+        else:
+            raise Exception("Invalid instruction")
 
     elif opcode in b_type_instructions:
         func3 = fields["func3"]
@@ -114,71 +179,86 @@ def execute_instruction(instruction):
             if operation == "beq":
                 if registers[fields["rs1"]] == registers[fields["rs2"]]:
                     program_counter += fields["imm"]
-                    return  # Skip the default PC increment
+                    registers[0] = 0
+                    return  
             elif operation == "bne":
+                # print("he")
                 if registers[fields["rs1"]] != registers[fields["rs2"]]:
                     program_counter += fields["imm"]
-                    return  # Skip the default PC increment
+                    registers[0] = 0
+                    return 
+            else:
+                raise Exception("Invalid instruction")  
+        else:
+            raise Exception("Invalid instruction")
 
     elif opcode in j_type_instructions:
         operation = j_type_instructions[opcode]
         if operation == "jal":
             registers[fields["rd"]] = program_counter + 4
             program_counter += fields["imm"]
-            return  # Skip the default PC increment
+            registers[0] = 0
+            return
+        else:
+            raise Exception("Invalid instruction")
 
-    program_counter += 4  # Increment program counter by 4 (default behavior)
+    else:
+        raise Exception("Invalid instruction")  
+        
+    registers[0] = 0
+    program_counter += 4  
 
-def decode_instruction(instruction):
-    opcode = instruction[25:32]
-    if opcode in r_type_instructions:
-        func3 = instruction[17:20]
-        func7 = instruction[0:7]
-        if func3 in r_type_instructions[opcode]:
-            if func7 in r_type_instructions[opcode][func3]:
-                return r_type_instructions[opcode][func3][func7]
-    elif opcode in i_type_instructions:
-        func3 = instruction[17:20]
-        if func3 in i_type_instructions[opcode]:
-            return i_type_instructions[opcode][func3]
-    elif opcode in s_type_instructions:
-        func3 = instruction[17:20]
-        if func3 in s_type_instructions[opcode]:
-            return s_type_instructions[opcode][func3]
-    elif opcode in b_type_instructions:
-        func3 = instruction[17:20]
-        if func3 in b_type_instructions[opcode]:
-            return b_type_instructions[opcode][func3]
-    elif opcode in j_type_instructions:
-        return j_type_instructions[opcode]
-    return "unknown"
+def to_twos_complement(value, bits=32):
+    """Convert a signed integer to its 2's complement binary representation."""
+    if value < 0:
+        value = (1 << bits) + value
+    return format(value, f'0{bits}b')
 
-def write_registers(outfile):
-    outfile.write(f"0b{format(program_counter, '032b')} ")
-    outfile.write(" ".join(f"0b{format(reg, '032b')}" for reg in registers) + "\n")
+def write_registers(outfile, decimal_outfile=None):
+    outfile.write(f"0b{to_twos_complement(program_counter)} ")
+    outfile.write(" ".join(f"0b{to_twos_complement(reg)}" for reg in registers) + "\n")
+    if decimal_outfile:
+        decimal_outfile.write(f"{program_counter} ")
+        decimal_outfile.write(" ".join(str(binary_decimal(to_twos_complement(reg))) for reg in registers) + "\n")
 
-
-def write_memory(outfile):
+def write_memory(outfile, decimal_outfile=None):
     address = 0x00010000
     for i in range(32):
-        outfile.write(f"0x{format(address, '08X')}:0b{format(memory[i], '032b')}\n")
+        outfile.write(f"0x{format(address, '08X')}:0b{to_twos_complement(memory[i])}\n")
+        if decimal_outfile:
+            decimal_outfile.write(f"0x{format(address, '08X')}:{str(binary_decimal(to_twos_complement(memory[i])))}\n")
         address += 4
 
-def main():
 
+def main():
     input_file = sys.argv[1]
     output_file = sys.argv[2]
+    output_decimal = output_file.replace(".txt", "_r.txt")
+
+    intput_arr = []
+    n = 0
+
+    counter = program_counter // 4
 
     try:
-        with open(input_file, "r") as infile, open(output_file, "w") as outfile:
+        with open(input_file, "r") as infile:
             for line in infile:
                 binary_instruction = line.strip()
-                decode_instruction(binary_instruction)  # Decode the instruction
-                execute_instruction(binary_instruction)  # Update registers and memory
-                write_registers(outfile)
+                intput_arr.append(binary_instruction)
+                n += 1
             
-            # Write memory contents after Virtual Halt
-            write_memory(outfile)
+        with open(output_file, "w") as outfile, open(output_decimal, "w") as decimal_outfile:
+            previous_program_counter = -1 
+            while counter < n:
+                binary_instruction = intput_arr[counter]
+                execute_instruction(binary_instruction) 
+                write_registers(outfile, decimal_outfile) 
+                counter = program_counter // 4  
+
+                if program_counter == previous_program_counter or binary_instruction == "00000000000000000000000001100011":
+                    break
+                previous_program_counter = program_counter 
+            write_memory(outfile, decimal_outfile)
 
     except FileNotFoundError:
         print(f"Error: File {input_file} not found.")
